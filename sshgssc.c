@@ -175,6 +175,16 @@ static Ssh_gss_stat ssh_gssapi_get_mic(struct ssh_gss_library *lib,
     return gss->get_mic(&(gssctx->min_stat), gssctx->ctx, 0, buf, hash);
 }
 
+static Ssh_gss_stat ssh_gssapi_verify_mic(struct ssh_gss_library *lib,
+					  Ssh_gss_ctx ctx, Ssh_gss_buf *buf,
+					  Ssh_gss_buf *hash)
+{
+    struct gssapi_functions *gss = &lib->u.gssapi;
+    gssapi_ssh_gss_ctx *gssctx = (gssapi_ssh_gss_ctx *) ctx;
+    if (gssctx == NULL) return SSH_GSS_FAILURE;
+    return gss->verify_mic(&(gssctx->min_stat), gssctx->ctx, buf, hash, NULL);
+}
+
 static Ssh_gss_stat ssh_gssapi_free_mic(struct ssh_gss_library *lib,
 					Ssh_gss_buf *hash)
 {
@@ -192,6 +202,7 @@ void ssh_gssapi_bind_fns(struct ssh_gss_library *lib)
     lib->acquire_cred = ssh_gssapi_acquire_cred;
     lib->release_cred = ssh_gssapi_release_cred;
     lib->get_mic = ssh_gssapi_get_mic;
+    lib->verify_mic = ssh_gssapi_verify_mic;
     lib->free_mic = ssh_gssapi_free_mic;
     lib->display_status = ssh_gssapi_display_status;
 }

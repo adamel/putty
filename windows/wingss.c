@@ -49,6 +49,9 @@ DECL_WINDOWS_FUNCTION(static, SECURITY_STATUS,
 DECL_WINDOWS_FUNCTION(static, SECURITY_STATUS,
 		      MakeSignature,
 		      (PCtxtHandle, ULONG, PSecBufferDesc, ULONG));
+DECL_WINDOWS_FUNCTION(static, SECURITY_STATUS,
+		      VerifySignature,
+		      (PCtxtHandle, PSecBufferDesc, ULONG, PULONG));
 
 typedef struct winSsh_gss_ctx {
     unsigned long maj_stat;
@@ -114,6 +117,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
         BIND_GSS_FN(delete_sec_context);
         BIND_GSS_FN(display_status);
         BIND_GSS_FN(get_mic);
+        BIND_GSS_FN(verify_mic);
         BIND_GSS_FN(import_name);
         BIND_GSS_FN(init_sec_context);
         BIND_GSS_FN(release_buffer);
@@ -142,6 +146,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	GET_WINDOWS_FUNCTION(module, DeleteSecurityContext);
 	GET_WINDOWS_FUNCTION(module, QueryContextAttributesA);
 	GET_WINDOWS_FUNCTION(module, MakeSignature);
+	GET_WINDOWS_FUNCTION(module, VerifySignature);
 
 	ssh_sspi_bind_fns(lib);
     }
@@ -169,6 +174,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
         BIND_GSS_FN(delete_sec_context);
         BIND_GSS_FN(display_status);
         BIND_GSS_FN(get_mic);
+        BIND_GSS_FN(verify_mic);
         BIND_GSS_FN(import_name);
         BIND_GSS_FN(init_sec_context);
         BIND_GSS_FN(release_buffer);
@@ -448,6 +454,37 @@ static Ssh_gss_stat ssh_sspi_get_mic(struct ssh_gss_library *lib,
     return winctx->maj_stat;
 }
 
+static Ssh_gss_stat ssh_sspi_verify_mic(struct ssh_gss_library *lib,
+					Ssh_gss_ctx ctx, Ssh_gss_buf *buf,
+					Ssh_gss_buf *hash)
+{
+    winSsh_gss_ctx *winctx= (winSsh_gss_ctx *) ctx;
+    SecBufferDesc InputBufferDescriptor;
+    SecBuffer InputSecurityToken[2];
+    ULONG qop;
+
+    if (winctx == NULL) return SSH_GSS_FAILURE;
+
+    winctx->maj_stat = 0;
+
+    InputBufferDescriptor.cBuffers = 2;
+    InputBufferDescriptor.pBuffers = InputSecurityToken;
+    InputBufferDescriptor.ulVersion = SECBUFFER_VERSION;
+    InputSecurityToken[0].BufferType = SECBUFFER_DATA;
+    InputSecurityToken[0].cbBuffer = buf->length;
+    InputSecurityToken[0].pvBuffer = buf->value;
+    InputSecurityToken[1].BufferType = SECBUFFER_TOKEN;
+    InputSecurityToken[1].cbBuffer = hash->length;
+    InputSecurityToken[1].pvBuffer = hash->value;
+
+    winctx->maj_stat = p_VerifySignature(&winctx->context,
+				       &InputBufferDescriptor,
+				       0,
+				       &qop);
+
+    return winctx->maj_stat;
+}
+
 static Ssh_gss_stat ssh_sspi_free_mic(struct ssh_gss_library *lib,
 				      Ssh_gss_buf *hash)
 {
@@ -465,6 +502,7 @@ static void ssh_sspi_bind_fns(struct ssh_gss_library *lib)
     lib->acquire_cred = ssh_sspi_acquire_cred;
     lib->release_cred = ssh_sspi_release_cred;
     lib->get_mic = ssh_sspi_get_mic;
+    lib->verify_mic = ssh_sspi_verify_mic;
     lib->free_mic = ssh_sspi_free_mic;
     lib->display_status = ssh_sspi_display_status;
 }
