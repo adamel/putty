@@ -983,6 +983,7 @@ struct ssh_tag {
      */
     struct ssh_gss_liblist *gsslibs;
     struct ssh_gss_library *gsslib;
+    Ssh_gss_name gss_srv_name;
 #endif
 
     /*
@@ -9322,7 +9323,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 	Ssh_gss_ctx gss_ctx;
 	Ssh_gss_buf gss_buf;
 	Ssh_gss_buf gss_rcvtok, gss_sndtok;
-	Ssh_gss_name gss_srv_name;
 	Ssh_gss_stat gss_stat;
 #endif
     };
@@ -10201,7 +10201,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		/* now start running */
 		s->gss_stat = ssh->gsslib->import_name(ssh->gsslib,
 						       ssh->fullhostname,
-						       &s->gss_srv_name);
+						       &ssh->gss_srv_name);
 		if (s->gss_stat != SSH_GSS_OK) {
 		    if (s->gss_stat == SSH_GSS_BAD_HOST_NAME)
 			logevent("GSSAPI import name failed - Bad service name");
@@ -10216,7 +10216,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 
 		if (s->gss_stat != SSH_GSS_OK) {
 		    logevent("GSSAPI authentication failed to get credentials");
-		    ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
 		    continue;
 		}
 
@@ -10229,7 +10228,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		    s->gss_stat = ssh->gsslib->init_sec_context
 			(ssh->gsslib,
 			 &s->gss_ctx,
-			 s->gss_srv_name,
+			 ssh->gss_srv_name,
 			 conf_get_int(ssh->conf, CONF_gssapifwd),
 			 &s->gss_rcvtok,
 			 &s->gss_sndtok);
@@ -10274,7 +10273,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		} while (s-> gss_stat == SSH_GSS_S_CONTINUE_NEEDED);
 
 		if (s->gss_stat != SSH_GSS_OK) {
-		    ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
 		    ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		    continue;
 		}
@@ -10303,7 +10301,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 
 		s->gotit = FALSE;
 
-		ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
 		ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		continue;
 #endif
@@ -11340,6 +11337,7 @@ static const char *ssh_init(void *frontend_handle, void **backend_handle,
 #ifndef NO_GSSAPI
     ssh->gsslibs = NULL;
     ssh->gsslib = NULL;
+    ssh->gss_srv_name = NULL;
 #endif
 
     random_ref(); /* do this now - may be needed by sharing setup code */
@@ -11458,6 +11456,8 @@ static void ssh_free(void *handle)
         agent_cancel_query(ssh->auth_agent_query);
 
 #ifndef NO_GSSAPI
+    if (ssh->gss_srv_name)
+	ssh->gsslib->release_name(ssh->gsslib, &ssh->gss_srv_name);
     if (ssh->gsslibs)
 	ssh_gss_cleanup(ssh->gsslibs);
 #endif
