@@ -94,6 +94,13 @@
 #define SSH2_MSG_KEXRSA_PUBKEY                    30    /* 0x1e */
 #define SSH2_MSG_KEXRSA_SECRET                    31    /* 0x1f */
 #define SSH2_MSG_KEXRSA_DONE                      32    /* 0x20 */
+#define SSH2_MSG_KEXGSS_INIT                      30	/* 0x1e */
+#define SSH2_MSG_KEXGSS_CONTINUE                  31	/* 0x1f */
+#define SSH2_MSG_KEXGSS_COMPLETE                  32	/* 0x20 */
+#define SSH2_MSG_KEXGSS_HOSTKEY                   33	/* 0x21 */
+#define SSH2_MSG_KEXGSS_ERROR                     34	/* 0x22 */
+#define SSH2_MSG_KEXGSS_GROUPREQ                  40	/* 0x28 */
+#define SSH2_MSG_KEXGSS_GROUP                     41	/* 0x29 */
 #define SSH2_MSG_USERAUTH_REQUEST                 50	/* 0x32 */
 #define SSH2_MSG_USERAUTH_FAILURE                 51	/* 0x33 */
 #define SSH2_MSG_USERAUTH_SUCCESS                 52	/* 0x34 */
@@ -131,14 +138,17 @@ typedef enum {
     SSH2_PKTCTX_NOKEX,
     SSH2_PKTCTX_DHGROUP,
     SSH2_PKTCTX_DHGEX,
-    SSH2_PKTCTX_RSAKEX
+    SSH2_PKTCTX_RSAKEX,
+    SSH2_PKTCTX_GSSGROUP,
+    SSH2_PKTCTX_GSSGEX,
 } Pkt_KCtx;
 typedef enum {
     SSH2_PKTCTX_NOAUTH,
     SSH2_PKTCTX_PUBLICKEY,
     SSH2_PKTCTX_PASSWORD,
     SSH2_PKTCTX_GSSAPI,
-    SSH2_PKTCTX_KBDINTER
+    SSH2_PKTCTX_GSSAPI_KEYEX,
+    SSH2_PKTCTX_KBDINTER,
 } Pkt_ACtx;
 
 #define SSH2_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT 1	/* 0x1 */
@@ -375,6 +385,20 @@ static char *ssh2_pkt_type(Pkt_KCtx pkt_kctx, Pkt_ACtx pkt_actx, int type)
     translatek(SSH2_MSG_KEXRSA_PUBKEY, SSH2_PKTCTX_RSAKEX);
     translatek(SSH2_MSG_KEXRSA_SECRET, SSH2_PKTCTX_RSAKEX);
     translatek(SSH2_MSG_KEXRSA_DONE, SSH2_PKTCTX_RSAKEX);
+#ifndef NO_GSSAPI
+    translatek(SSH2_MSG_KEXGSS_INIT, SSH2_PKTCTX_GSSGROUP);
+    translatek(SSH2_MSG_KEXGSS_CONTINUE, SSH2_PKTCTX_GSSGROUP);
+    translatek(SSH2_MSG_KEXGSS_COMPLETE, SSH2_PKTCTX_GSSGROUP);
+    translatek(SSH2_MSG_KEXGSS_HOSTKEY, SSH2_PKTCTX_GSSGROUP);
+    translatek(SSH2_MSG_KEXGSS_ERROR, SSH2_PKTCTX_GSSGROUP);
+    translatek(SSH2_MSG_KEXGSS_GROUPREQ, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_GROUP, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_INIT, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_CONTINUE, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_COMPLETE, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_HOSTKEY, SSH2_PKTCTX_GSSGEX);
+    translatek(SSH2_MSG_KEXGSS_ERROR, SSH2_PKTCTX_GSSGEX);
+#endif
     translate(SSH2_MSG_USERAUTH_REQUEST);
     translate(SSH2_MSG_USERAUTH_FAILURE);
     translate(SSH2_MSG_USERAUTH_SUCCESS);

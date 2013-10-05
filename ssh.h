@@ -218,7 +218,7 @@ struct ssh_hash {
 
 struct ssh_kex {
     char *name, *groupname;
-    enum { KEXTYPE_DH, KEXTYPE_RSA } main_type;
+    enum { KEXTYPE_DH, KEXTYPE_RSA, KEXTYPE_GSS } main_type;
     /* For DH */
     const unsigned char *pdata, *gdata; /* NULL means group exchange */
     int plen, glen;
