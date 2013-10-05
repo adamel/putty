@@ -1020,6 +1020,7 @@ struct ssh_tag {
     struct ssh_gss_liblist *gsslibs;
     struct ssh_gss_library *gsslib;
     Ssh_gss_name gss_srv_name;
+    int can_gssapi;
 #endif
 };
 
@@ -5622,6 +5623,12 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     else
 	s->maclist = macs, s->nmacs = lenof(macs);
 
+#ifndef NO_GSSAPI
+    if (!ssh->gsslibs)
+	ssh->gsslibs = ssh_gss_setup(ssh->conf);
+    ssh->can_gssapi = conf_get_int(ssh->conf, CONF_try_gssapi_auth) &&
+	ssh->gsslibs->nlibraries > 0;
+#endif
   begin_key_exchange:
     ssh->pkt_kctx = SSH2_PKTCTX_NOKEX;
     {
@@ -7815,8 +7822,8 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 	int gotit, need_pw, can_pubkey, can_passwd, can_keyb_inter;
 	int tried_pubkey_config, done_agent;
 #ifndef NO_GSSAPI
-	int can_gssapi;
-	int tried_gssapi;
+	int can_gssapi_mic;
+	int tried_gssapi_mic;
 #endif
 	int kbd_inter_refused;
 	int we_are_in, userauth_success;
@@ -7877,7 +7884,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
     s->done_service_req = FALSE;
     s->we_are_in = s->userauth_success = FALSE;
 #ifndef NO_GSSAPI
-    s->tried_gssapi = FALSE;
+    s->tried_gssapi_mic = FALSE;
 #endif
 
     if (!conf_get_int(ssh->conf, CONF_ssh_no_userauth)) {
@@ -8297,11 +8304,8 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		s->can_keyb_inter = conf_get_int(ssh->conf, CONF_try_ki_auth) &&
 		    in_commasep_string("keyboard-interactive", methods, methlen);
 #ifndef NO_GSSAPI
-		if (!ssh->gsslibs)
-		    ssh->gsslibs = ssh_gss_setup(ssh->conf);
-		s->can_gssapi = conf_get_int(ssh->conf, CONF_try_gssapi_auth) &&
-		    in_commasep_string("gssapi-with-mic", methods, methlen) &&
-		    ssh->gsslibs->nlibraries > 0;
+		s->can_gssapi_mic = ssh->can_gssapi &&
+		    in_commasep_string("gssapi-with-mic", methods, methlen);
 #endif
 	    }
 
@@ -8635,7 +8639,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		}
 
 #ifndef NO_GSSAPI
-	    } else if (s->can_gssapi && !s->tried_gssapi) {
+	    } else if (s->can_gssapi_mic && !s->tried_gssapi_mic) {
 
 		/* GSSAPI Authentication */
 
@@ -8643,7 +8647,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		char *data;
 		Ssh_gss_buf mic;
 		s->type = AUTH_TYPE_GSSAPI;
-		s->tried_gssapi = TRUE;
+		s->tried_gssapi_mic = TRUE;
 		s->gotit = TRUE;
 		ssh->pkt_actx = SSH2_PKTCTX_GSSAPI;
 
