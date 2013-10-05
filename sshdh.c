@@ -98,6 +98,57 @@ const struct ssh_kexes ssh_diffiehellman_gex = {
     gex_list
 };
 
+#ifndef NO_GSSAPI
+static const struct ssh_kex ssh_krb5_diffiehellman_group1_sha1 = {
+    "gss-group1-sha1-toWM5Slw5Ew8Mqkay+al2g==", "group1",
+    KEXTYPE_GSS, P1, G, lenof(P1), lenof(G), &ssh_sha1
+};
+
+static const struct ssh_kex *const gss_group1_list[] = {
+    &ssh_krb5_diffiehellman_group1_sha1
+};
+
+const struct ssh_kexes ssh_gss_diffiehellman_group1 = {
+    sizeof(gss_group1_list) / sizeof(*gss_group1_list),
+    gss_group1_list
+};
+
+static const struct ssh_kex ssh_krb5_diffiehellman_group14_sha1 = {
+    "gss-group14-sha1-toWM5Slw5Ew8Mqkay+al2g==", "group14",
+    KEXTYPE_GSS, P14, G, lenof(P14), lenof(G), &ssh_sha1,
+};
+
+static const struct ssh_kex *const gss_group14_list[] = {
+    &ssh_krb5_diffiehellman_group14_sha1
+};
+
+const struct ssh_kexes ssh_gss_diffiehellman_group14 = {
+    sizeof(gss_group14_list) / sizeof(*gss_group14_list),
+    gss_group14_list
+};
+
+static const struct ssh_kex ssh_krb5_diffiehellman_gex_sha256 = {
+    /* XXX Non-standard, but predicted for the future */
+    "gss-gex-sha256-toWM5Slw5Ew8Mqkay+al2g==", NULL,
+    KEXTYPE_GSS, NULL, NULL, 0, 0, &ssh_sha256
+};
+
+static const struct ssh_kex ssh_krb5_diffiehellman_gex_sha1 = {
+    "gss-gex-sha1-toWM5Slw5Ew8Mqkay+al2g==", NULL,
+    KEXTYPE_GSS, NULL, NULL, 0, 0, &ssh_sha1
+};
+
+static const struct ssh_kex *const gss_gex_list[] = {
+    &ssh_krb5_diffiehellman_gex_sha256,
+    &ssh_krb5_diffiehellman_gex_sha1
+};
+
+const struct ssh_kexes ssh_gss_diffiehellman_gex = {
+    sizeof(gss_gex_list) / sizeof(*gss_gex_list),
+    gss_gex_list
+};
+#endif
+
 /*
  * Variables.
  */
