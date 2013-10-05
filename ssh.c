@@ -6100,6 +6100,23 @@ static void ssh2_mkkey(Ssh ssh, Bignum K, unsigned char *H, char chr,
     h->final(s, keyspace + h->hlen);
 }
 
+static int ssh2_get_nbits(Ssh ssh, int csbits, int scbits)
+{
+    int nbits;
+    /*
+     * Work out the number of bits of key we will need from the
+     * key exchange. We start with the maximum key length of
+     * either cipher...
+     */
+    nbits = (csbits > scbits ? csbits : scbits);
+    /* The keys only have hlen-bit entropy, since they're based on
+     * a hash. So cap the key size at hlen bits. */
+    if (nbits > ssh->kex->hash->hlen * 8)
+	nbits = ssh->kex->hash->hlen * 8;
+
+    return nbits;
+}
+
 /*
  * Handle the SSH-2 transport layer.
  */
@@ -6665,23 +6682,8 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     }
 
     if (ssh->kex->main_type == KEXTYPE_DH) {
-        /*
-         * Work out the number of bits of key we will need from the
-         * key exchange. We start with the maximum key length of
-         * either cipher...
-         */
-        {
-            int csbits, scbits;
-
-            csbits = s->cscipher_tobe->keylen;
-            scbits = s->sccipher_tobe->keylen;
-            s->nbits = (csbits > scbits ? csbits : scbits);
-        }
-        /* The keys only have hlen-bit entropy, since they're based on
-         * a hash. So cap the key size at hlen bits. */
-        if (s->nbits > ssh->kex->hash->hlen * 8)
-            s->nbits = ssh->kex->hash->hlen * 8;
-
+	s->nbits = ssh2_get_nbits(ssh, s->cscipher_tobe->keylen,
+				  s->sccipher_tobe->keylen);
         /*
          * If we're doing Diffie-Hellman group exchange, start by
          * requesting a group.
