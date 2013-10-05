@@ -256,6 +256,13 @@ typedef OM_uint32 (GSS_CC *t_gss_get_mic)
              const gss_buffer_t             /*message_buffer*/,
              gss_buffer_t                   /*msg_token*/);
 
+typedef OM_uint32 (GSS_CC *t_gss_verify_mic)
+            (OM_uint32                    * /*minor_status*/,
+             const gss_ctx_id_t             /*context_handle*/,
+             gss_buffer_t                   /*input_message*/,
+             gss_buffer_t                   /*input_token*/,
+             gss_qop_t                    * /*qop_state*/);
+
 typedef OM_uint32 (GSS_CC *t_gss_display_status)
             (OM_uint32                   * /*minor_status*/,
              OM_uint32                     /*status_value*/,
@@ -284,6 +291,7 @@ struct gssapi_functions {
     t_gss_delete_sec_context delete_sec_context;
     t_gss_display_status display_status;
     t_gss_get_mic get_mic;
+    t_gss_verify_mic verify_mic;
     t_gss_import_name import_name;
     t_gss_init_sec_context init_sec_context;
     t_gss_release_buffer release_buffer;

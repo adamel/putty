@@ -114,6 +114,13 @@ typedef Ssh_gss_stat (*t_ssh_gss_get_mic)(struct ssh_gss_library *lib,
                  Ssh_gss_buf *out);
 
 /*
+ * Verifies a MIC for some input data.
+ */
+typedef Ssh_gss_stat (*t_ssh_gss_verify_mic)(struct ssh_gss_library *lib,
+					     Ssh_gss_ctx ctx, Ssh_gss_buf *data,
+					     Ssh_gss_buf *mic);
+
+/*
  * Frees the contents of an Ssh_gss_buf filled in by
  * ssh_gss_get_mic(). Do not accidentally call this on something
  * filled in by ssh_gss_init_sec_context() (which requires a
@@ -161,6 +168,7 @@ struct ssh_gss_library {
     t_ssh_gss_acquire_cred acquire_cred;
     t_ssh_gss_release_cred release_cred;
     t_ssh_gss_get_mic get_mic;
+    t_ssh_gss_verify_mic verify_mic;
     t_ssh_gss_free_mic free_mic;
     t_ssh_gss_display_status display_status;
 
