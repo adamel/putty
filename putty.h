@@ -263,6 +263,9 @@ enum {
     KEX_DHGEX,
     KEX_RSA,
     KEX_ECDH,
+    KEX_GSSGROUP1,
+    KEX_GSSGROUP14,
+    KEX_GSSGEX,
     KEX_MAX
 };
 
