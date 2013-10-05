@@ -1018,6 +1018,7 @@ struct ssh_tag {
      * GSSAPI libraries for this session.
      */
     struct ssh_gss_liblist *gsslibs;
+    struct ssh_gss_library *gsslib;
 #endif
 };
 
@@ -3057,6 +3058,44 @@ static void ssh_sent(Plug plug, int bufsize)
     if (bufsize < SSH_MAX_BACKLOG)
 	ssh_throttle_all(ssh, 0, bufsize);
 }
+
+#ifndef NO_GSSAPI
+/*
+ * Pick the highest GSS library on the preference
+ * list.
+ */
+static void init_gsslib(Ssh ssh)
+{
+    int i, j;
+    if (ssh->gsslib) {
+	/* GSS already initialized. */
+	return;
+    }
+
+    ssh->gsslib = NULL;
+    for (i = 0; i < ngsslibs; i++) {
+	int want_id = conf_get_int_int(ssh->conf,
+				       CONF_ssh_gsslist, i);
+	for (j = 0; j < ssh->gsslibs->nlibraries; j++)
+	    if (ssh->gsslibs->libraries[j].id == want_id) {
+		ssh->gsslib = &ssh->gsslibs->libraries[j];
+		goto got_gsslib;   /* double break */
+	    }
+    }
+ got_gsslib:
+    /*
+     * We always expect to have found something in
+     * the above loop: we only came here if there
+     * was at least one viable GSS library, and the
+     * preference list should always mention
+     * everything and only change the order.
+     */
+    assert(ssh->gsslib);
+
+    if (ssh->gsslib->gsslogmsg)
+	logevent(ssh->gsslib->gsslogmsg);
+}
+#endif
 
 /*
  * Connect to specified host and port.
@@ -7802,7 +7841,6 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 	struct Packet *pktout;
 	Filename *keyfile;
 #ifndef NO_GSSAPI
-	struct ssh_gss_library *gsslib;
 	Ssh_gss_ctx gss_ctx;
 	Ssh_gss_buf gss_buf;
 	Ssh_gss_buf gss_rcvtok, gss_sndtok;
@@ -8609,35 +8647,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		s->gotit = TRUE;
 		ssh->pkt_actx = SSH2_PKTCTX_GSSAPI;
 
-		/*
-		 * Pick the highest GSS library on the preference
-		 * list.
-		 */
-		{
-		    int i, j;
-		    s->gsslib = NULL;
-		    for (i = 0; i < ngsslibs; i++) {
-			int want_id = conf_get_int_int(ssh->conf,
-						       CONF_ssh_gsslist, i);
-			for (j = 0; j < ssh->gsslibs->nlibraries; j++)
-			    if (ssh->gsslibs->libraries[j].id == want_id) {
-				s->gsslib = &ssh->gsslibs->libraries[j];
-				goto got_gsslib;   /* double break */
-			    }
-		    }
-		    got_gsslib:
-		    /*
-		     * We always expect to have found something in
-		     * the above loop: we only came here if there
-		     * was at least one viable GSS library, and the
-		     * preference list should always mention
-		     * everything and only change the order.
-		     */
-		    assert(s->gsslib);
-		}
-
-		if (s->gsslib->gsslogmsg)
-		    logevent(s->gsslib->gsslogmsg);
+		init_gsslib(ssh);
 
 		/* Sending USERAUTH_REQUEST with "gssapi-with-mic" method */
 		s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_REQUEST);
@@ -8647,7 +8657,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
                 logevent("Attempting GSSAPI authentication");
 
 		/* add mechanism info */
-		s->gsslib->indicate_mech(s->gsslib, &s->gss_buf);
+		ssh->gsslib->indicate_mech(ssh->gsslib, &s->gss_buf);
 
 		/* number of GSSAPI mechanisms */
 		ssh2_pkt_adduint32(s->pktout,1);
@@ -8683,9 +8693,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		}
 
 		/* now start running */
-		s->gss_stat = s->gsslib->import_name(s->gsslib,
-						     ssh->fullhostname,
-						     &s->gss_srv_name);
+		s->gss_stat = ssh->gsslib->import_name(ssh->gsslib,
+						       ssh->fullhostname,
+						       &s->gss_srv_name);
 		if (s->gss_stat != SSH_GSS_OK) {
 		    if (s->gss_stat == SSH_GSS_BAD_HOST_NAME)
 			logevent("GSSAPI import name failed - Bad service name");
@@ -8695,11 +8705,12 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		}
 
 		/* fetch TGT into GSS engine */
-		s->gss_stat = s->gsslib->acquire_cred(s->gsslib, &s->gss_ctx);
+		s->gss_stat = ssh->gsslib->acquire_cred(ssh->gsslib,
+							&s->gss_ctx);
 
 		if (s->gss_stat != SSH_GSS_OK) {
 		    logevent("GSSAPI authentication failed to get credentials");
-		    s->gsslib->release_name(s->gsslib, &s->gss_srv_name);
+		    ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
 		    continue;
 		}
 
@@ -8709,8 +8720,8 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 
 		/* now enter the loop */
 		do {
-		    s->gss_stat = s->gsslib->init_sec_context
-			(s->gsslib,
+		    s->gss_stat = ssh->gsslib->init_sec_context
+			(ssh->gsslib,
 			 &s->gss_ctx,
 			 s->gss_srv_name,
 			 conf_get_int(ssh->conf, CONF_gssapifwd),
@@ -8721,8 +8732,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 			s->gss_stat!=SSH_GSS_S_CONTINUE_NEEDED) {
 			logevent("GSSAPI authentication initialisation failed");
 
-			if (s->gsslib->display_status(s->gsslib, s->gss_ctx,
-						      &s->gss_buf) == SSH_GSS_OK) {
+			if (ssh->gsslib->display_status(ssh->gsslib, s->gss_ctx,
+							&s->gss_buf)
+			    == SSH_GSS_OK) {
 			    logevent(s->gss_buf.value);
 			    sfree(s->gss_buf.value);
 			}
@@ -8739,7 +8751,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 			ssh_pkt_addstring_start(s->pktout);
 			ssh_pkt_addstring_data(s->pktout,s->gss_sndtok.value,s->gss_sndtok.length);
 			ssh2_pkt_send(ssh, s->pktout);
-			s->gsslib->free_tok(s->gsslib, &s->gss_sndtok);
+			ssh->gsslib->free_tok(ssh->gsslib, &s->gss_sndtok);
 		    }
 
 		    if (s->gss_stat == SSH_GSS_S_CONTINUE_NEEDED) {
@@ -8756,8 +8768,8 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		} while (s-> gss_stat == SSH_GSS_S_CONTINUE_NEEDED);
 
 		if (s->gss_stat != SSH_GSS_OK) {
-		    s->gsslib->release_name(s->gsslib, &s->gss_srv_name);
-		    s->gsslib->release_cred(s->gsslib, &s->gss_ctx);
+		    ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
+		    ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		    continue;
 		}
 		logevent("GSSAPI authentication loop finished OK");
@@ -8776,17 +8788,17 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		s->gss_buf.value = (char *)s->pktout->data + micoffset;
 		s->gss_buf.length = s->pktout->length - micoffset;
 
-		s->gsslib->get_mic(s->gsslib, s->gss_ctx, &s->gss_buf, &mic);
+		ssh->gsslib->get_mic(ssh->gsslib, s->gss_ctx, &s->gss_buf, &mic);
 		s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_GSSAPI_MIC);
 		ssh_pkt_addstring_start(s->pktout);
 		ssh_pkt_addstring_data(s->pktout, mic.value, mic.length);
 		ssh2_pkt_send(ssh, s->pktout);
-		s->gsslib->free_mic(s->gsslib, &mic);
+		ssh->gsslib->free_mic(ssh->gsslib, &mic);
 
 		s->gotit = FALSE;
 
-		s->gsslib->release_name(s->gsslib, &s->gss_srv_name);
-		s->gsslib->release_cred(s->gsslib, &s->gss_ctx);
+		ssh->gsslib->release_name(ssh->gsslib, &s->gss_srv_name);
+		ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		continue;
 #endif
 	    } else if (s->can_keyb_inter && !s->kbd_inter_refused) {
@@ -9744,6 +9756,7 @@ static const char *ssh_init(void *frontend_handle, void **backend_handle,
 
 #ifndef NO_GSSAPI
     ssh->gsslibs = NULL;
+    ssh->gsslib = NULL;
 #endif
 
     p = connect_to_host(ssh, host, port, realhost, nodelay, keepalive);
