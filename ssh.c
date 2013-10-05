@@ -6469,6 +6469,9 @@ static void do_ssh2_transport(Ssh ssh, const void *vin, int inlen,
 	int guessok;
 	int ignorepkt;
 	struct kexinit_algorithm kexlists[NKEXLIST][MAXKEXLIST];
+#ifndef NO_GSSAPI
+	Ssh_gss_stat gss_stat;
+#endif
     };
     crState(do_ssh2_transport_state);
 
@@ -6499,6 +6502,20 @@ static void do_ssh2_transport(Ssh ssh, const void *vin, int inlen,
 	if (!ssh->gsslibs)
 	    ssh->gsslibs = ssh_gss_setup(ssh->conf);
 	ssh->can_gssapi = (ssh->gsslibs->nlibraries > 0);
+	/* Select GSSAPI library. */
+	init_gsslib(ssh);
+	/* Initialize GSSAPI name. */
+	s->gss_stat = ssh->gsslib->import_name(ssh->gsslib,
+					       ssh->fullhostname,
+					       &ssh->gss_srv_name);
+	if (s->gss_stat != SSH_GSS_OK) {
+	    if (s->gss_stat == SSH_GSS_BAD_HOST_NAME)
+		logevent("GSSAPI import name failed - Bad service name");
+	    else
+		logevent("GSSAPI import name failed");
+	    /* Disable GSSAPI. */
+	    ssh->can_gssapi = FALSE;
+	}
     } else {
 	/* No point in even bothering to try to load the
 	 * GSS libraries, if the user configuration and
@@ -10150,8 +10167,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		s->gotit = TRUE;
 		ssh->pkt_actx = SSH2_PKTCTX_GSSAPI;
 
-		init_gsslib(ssh);
-
 		/* Sending USERAUTH_REQUEST with "gssapi-with-mic" method */
 		s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_REQUEST);
 		ssh2_pkt_addstring(s->pktout, ssh->username);
@@ -10192,18 +10207,6 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		    memcmp((char *)s->gss_rcvtok.value + 2,
 			   s->gss_buf.value,s->gss_buf.length) ) {
 		    logevent("GSSAPI authentication - wrong response from server");
-		    continue;
-		}
-
-		/* now start running */
-		s->gss_stat = ssh->gsslib->import_name(ssh->gsslib,
-						       ssh->fullhostname,
-						       &ssh->gss_srv_name);
-		if (s->gss_stat != SSH_GSS_OK) {
-		    if (s->gss_stat == SSH_GSS_BAD_HOST_NAME)
-			logevent("GSSAPI import name failed - Bad service name");
-		    else
-			logevent("GSSAPI import name failed");
 		    continue;
 		}
 
