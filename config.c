@@ -433,6 +433,11 @@ static void kexlist_handler(union control *ctrl, void *dlg,
 	    { "Diffie-Hellman group 1",		KEX_DHGROUP1 },
 	    { "Diffie-Hellman group 14",	KEX_DHGROUP14 },
 	    { "Diffie-Hellman group exchange",	KEX_DHGEX },
+#ifndef NO_GSSAPI
+	    { "GSSAPI group 1",			KEX_GSSGROUP1 },
+	    { "GSSAPI group 14",		KEX_GSSGROUP14 },
+	    { "GSSAPI group exchange",		KEX_GSSGEX },
+#endif
 	    { "RSA-based key exchange", 	KEX_RSA },
             { "ECDH key exchange",              KEX_ECDH },
 	    { "-- warn below here --",		KEX_WARN }
