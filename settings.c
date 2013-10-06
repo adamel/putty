@@ -28,6 +28,11 @@ static const struct keyvalwhere kexnames[] = {
     { "dh-gex-sha1",        KEX_DHGEX,      -1, -1 },
     { "dh-group14-sha1",    KEX_DHGROUP14,  -1, -1 },
     { "dh-group1-sha1",     KEX_DHGROUP1,   KEX_WARN, +1 },
+#ifndef NO_GSSAPI
+    { "gss-gex-sha1",       KEX_GSSGEX,     -1, -1 },
+    { "gss-group14-sha1",   KEX_GSSGROUP14, -1, -1 },
+    { "gss-group1-sha1",    KEX_GSSGROUP1,  KEX_WARN, +1 },
+#endif
     { "rsa",                KEX_RSA,        KEX_WARN, -1 },
     { "WARN",               KEX_WARN,       -1, -1 }
 };
@@ -852,10 +857,19 @@ void load_open_settings(void *sesskey, Conf *conf)
 	 * a server which offered it then choked, but we never got
 	 * a server version string or any other reports. */
 	const char *default_kexes,
+#ifndef NO_GSSAPI
+		   *normal_default = "gss-gex-sha1,gss-group14-sha1,"
+		       "ecdh,dh-gex-sha1,dh-group14-sha1,rsa,"
+		       "WARN,gss-group1-sha1,dh-group1-sha1",
+	           *bugdhgex2_default = "gss-group14-sha1,"
+		       "ecdh,dh-group14-sha1,rsa,"
+		       "WARN,dh-group1-sha1,gss-group1-sha1,gss-gex-sha1,dh-gex-sha1";
+#else
 	           *normal_default = "ecdh,dh-gex-sha1,dh-group14-sha1,rsa,"
 		       "WARN,dh-group1-sha1",
 		   *bugdhgex2_default = "ecdh,dh-group14-sha1,rsa,"
 		       "WARN,dh-group1-sha1,dh-gex-sha1";
+#endif
 	char *raw;
 	i = 2 - gppi_raw(sesskey, "BugDHGEx2", 0);
 	if (i == FORCE_ON)
