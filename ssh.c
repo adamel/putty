@@ -1021,7 +1021,7 @@ struct ssh_tag {
     struct ssh_gss_library *gsslib;
     Ssh_gss_name gss_srv_name;
     Ssh_gss_ctx gss_ctx;
-    int can_gssapi;
+    int can_gssapi, did_gssapi;
 #endif
 };
 
@@ -5621,7 +5621,15 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	int guessok;
 	int ignorepkt;
 #ifndef NO_GSSAPI
+	/*
+	 * This context is set to the global context for the first key
+	 * exchange, then set to a new one for each rekey since the
+	 * context from the first key exchange is needed for the
+	 * gssapi-keyex userauth mechanism.
+	 */
+	Ssh_gss_ctx gss_ctx;
 	Ssh_gss_stat gss_stat;
+	Ssh_gss_buf gss_sndtok, gss_rcvtok;
 #endif
     };
     crState(do_ssh2_transport_state);
@@ -5649,6 +5657,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	ssh->gsslibs = ssh_gss_setup(ssh->conf);
     ssh->can_gssapi = conf_get_int(ssh->conf, CONF_try_gssapi_auth) &&
 	ssh->gsslibs->nlibraries > 0;
+    ssh->did_gssapi = FALSE;
 
     if (ssh->can_gssapi) {
 	/* Select GSSAPI library. */
@@ -5668,6 +5677,54 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     }
 #endif
   begin_key_exchange:
+#ifndef NO_GSSAPI
+    /*
+     * Don't enable gssapi-keyex unless we can acquire credentials
+     * and generate an initial token.
+     */
+    if (ssh->can_gssapi) {
+	s->gss_ctx = NULL;
+	SSH_GSS_CLEAR_BUF(&s->gss_rcvtok);
+	SSH_GSS_CLEAR_BUF(&s->gss_sndtok);
+
+	/* fetch TGT into GSS engine */
+	if (ssh->gsslib->acquire_cred(ssh->gsslib, &s->gss_ctx)
+	    != SSH_GSS_OK) {
+	    logevent("GSSAPI authentication failed to get credentials");
+	    ssh->can_gssapi = 0;
+	}
+	/* Check again in case the credential acquisition failed above */
+	if (ssh->can_gssapi) {
+	    s->gss_stat = ssh->gsslib->init_sec_context(
+		    ssh->gsslib,
+		    &s->gss_ctx,
+		    ssh->gss_srv_name,
+		    conf_get_int(ssh->conf, CONF_gssapifwd),
+		    &s->gss_rcvtok,
+		    &s->gss_sndtok);
+
+	    if (s->gss_stat != SSH_GSS_OK &&
+		s->gss_stat != SSH_GSS_S_CONTINUE_NEEDED) {
+		Ssh_gss_buf gss_buf;
+
+		logevent("GSSAPI key-exchange initialisation failed");
+		if (ssh->gsslib->display_status(ssh->gsslib, s->gss_ctx,
+						&gss_buf) == SSH_GSS_OK) {
+		    logevent(gss_buf.value);
+		    sfree(gss_buf.value);
+		}
+		ssh->can_gssapi = 0;
+	    }
+	}
+	/* For the first key-exchange we save the context into
+	 * ssh->gss_ctx, since this context must be used by the
+	 * userauth mechanism.
+	 */
+	if (!ssh->did_gssapi) {
+	    ssh->gss_ctx = s->gss_ctx;
+	}
+    }
+#endif
     ssh->pkt_kctx = SSH2_PKTCTX_NOKEX;
     {
 	int i, j, k, commalist_started;
@@ -5694,6 +5751,26 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 		s->preferred_kex[s->n_preferred_kex++] =
 		    &ssh_rsa_kex;
 		break;
+#ifndef NO_GSSAPI
+	      case KEX_GSSGEX:
+		if (ssh->can_gssapi) {
+		    s->preferred_kex[s->n_preferred_kex++] =
+			&ssh_gss_diffiehellman_gex;
+		}
+		break;
+	      case KEX_GSSGROUP14:
+		if (ssh->can_gssapi) {
+		    s->preferred_kex[s->n_preferred_kex++] =
+			&ssh_gss_diffiehellman_group14;
+		}
+		break;
+	      case KEX_GSSGROUP1:
+		if (ssh->can_gssapi) {
+		    s->preferred_kex[s->n_preferred_kex++] =
+			&ssh_gss_diffiehellman_group1;
+		}
+		break;
+#endif
 	      case KEX_WARN:
 		/* Flag for later. Don't bother if it's the last in
 		 * the list. */
@@ -5782,6 +5859,16 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	    if (i < lenof(hostkey_algs) - 1)
 		ssh2_pkt_addstring_str(s->pktout, ",");
 	}
+#ifndef NO_GSSAPI
+	/*
+	 * If we support GSSAPI key exchange we advertise null host
+	 * keys as well.
+	 */
+	if (ssh->can_gssapi) {
+	    ssh2_pkt_addstring_str(s->pktout, ",");
+	    ssh2_pkt_addstring_str(s->pktout, ssh_null.name);
+	}
+#endif
 	/* List encryption algorithms (client->server then server->client). */
 	for (k = 0; k < 2; k++) {
 	    ssh2_pkt_addstring_start(s->pktout);
@@ -5867,6 +5954,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	}
 	ssh->kex = NULL;
 	ssh->hostkey = NULL;
+	s->hkey = NULL;
 	s->cscipher_tobe = NULL;
 	s->sccipher_tobe = NULL;
 	s->csmac_tobe = NULL;
@@ -5913,6 +6001,29 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 		break;
 	    }
 	}
+#ifndef NO_GSSAPI
+	/* If using GSSAPI key exchange null host keys are ok. */
+	if (!ssh->hostkey && ssh->can_gssapi) {
+	    if (ssh->kex->main_type == KEXTYPE_GSS) {
+		/*
+		 * RFC 4462, section 5:
+		 *  Any implementation supporting at least one key
+		 *  exchange method that conforms to Section 2 MUST
+		 *  also support the "null" host key algorithm.
+		 *  Servers MUST NOT advertise the "null" host key
+		 *  algorithm unless it is the only algorithm
+		 *  advertised.
+		 * Thus if we're using GSS and got no host key we can
+		 * assume "null" host key algorithm even if the server
+		 * didn't advertise it.
+		 */
+		ssh->hostkey = &ssh_null;
+	    } else if (in_commasep_string(ssh_null.name, str, len)) {
+		bombout(("Server only supports \"null\" host key algorithm, but we failed to use GSSAPI key exchange"));
+		crStopV;
+	    }
+	}
+#endif
 	if (!ssh->hostkey) {
 	    bombout(("Couldn't agree a host key algorithm (available: %s)",
 		     str ? str : "(null)"));
@@ -6197,6 +6308,188 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
             freebn(s->g);
             freebn(s->p);
         }
+#ifndef NO_GSSAPI
+    } else if (ssh->kex->main_type == KEXTYPE_GSS) {
+        int token_follows;
+	s->nbits = ssh2_get_nbits(ssh, s->cscipher_tobe->keylen,
+				  s->sccipher_tobe->keylen);
+        /*
+         * If we're doing Diffie-Hellman group exchange, start by
+         * requesting a group.
+         */
+        if (!ssh->kex->pdata) {
+            logevent("Doing GSSAPI group exchange");
+            ssh->pkt_kctx = SSH2_PKTCTX_GSSGEX;
+
+            /*
+             * Work out how big a DH group we will need to allow that
+             * much data.
+             */
+            s->pbits = 512 << ((s->nbits - 1) / 64);
+
+            s->pktout = ssh2_pkt_init(SSH2_MSG_KEXGSS_GROUPREQ);
+            ssh2_pkt_adduint32(s->pktout, 1024); /* Minimum modulus length. */
+            ssh2_pkt_adduint32(s->pktout, s->pbits);
+            ssh2_pkt_adduint32(s->pktout, 8192); /* Maximum modulus length. */
+            ssh2_pkt_send_noqueue(ssh, s->pktout);
+
+            crWaitUntilV(pktin);
+            if (pktin->type != SSH2_MSG_KEXGSS_GROUP) {
+                bombout(("expected GSSAPI key exchange group packet from server"));
+                crStopV;
+            }
+
+            s->p = ssh2_pkt_getmp(pktin);
+            s->g = ssh2_pkt_getmp(pktin);
+            if (!s->p || !s->g) {
+                bombout(("unable to read mp-ints from incoming group packet"));
+                crStopV;
+            }
+            ssh->kex_ctx = dh_setup_gex(s->p, s->g);
+        } else {
+            ssh->pkt_kctx = SSH2_PKTCTX_GSSGROUP;
+            ssh->kex_ctx = dh_setup_group(ssh->kex);
+            logeventf(ssh, "Using GSSAPI Diffie-Hellman with standard group \"%s\"",
+                      ssh->kex->groupname);
+        }
+
+        logeventf(ssh, "Doing GSSAPI Diffie-Hellman key exchange with hash %s",
+                  ssh->kex->hash->text_name);
+        /*
+         * Now generate and send e for Diffie-Hellman.
+         */
+        set_busy_status(ssh->frontend, BUSY_CPU); /* this can take a while */
+        s->e = dh_create_e(ssh->kex_ctx, s->nbits * 2);
+
+        s->pktout = ssh2_pkt_init(SSH2_MSG_KEXGSS_INIT);
+        ssh2_pkt_addstring_start(s->pktout);
+        ssh2_pkt_addstring_data(s->pktout, s->gss_sndtok.value,
+                                s->gss_sndtok.length);
+        ssh2_pkt_addmp(s->pktout, s->e);
+        ssh2_pkt_send_noqueue(ssh, s->pktout);
+        ssh->gsslib->free_tok(ssh->gsslib, &s->gss_sndtok);
+
+        /* Loop while exchanging GSS tokens */
+        s->hostkeydata = NULL;
+        s->hostkeylen = 0;
+        do {
+            set_busy_status(ssh->frontend, BUSY_WAITING);
+            crWaitUntilV(pktin);
+            set_busy_status(ssh->frontend, BUSY_NOT);
+            switch (pktin->type) {
+              case SSH2_MSG_KEXGSS_ERROR:
+                logevent("Received GSSAPI key exchange error packet");
+                break;
+              case SSH2_MSG_KEXGSS_COMPLETE:
+                /* Done. */
+                break;
+              case SSH2_MSG_KEXGSS_HOSTKEY:
+                if (s->hostkeydata) {
+                    bombout(("multiple host keys received during GSSAPI key exchange"));
+                    crStopV;
+                }
+                ssh_pkt_getstring(pktin, &s->hostkeydata, &s->hostkeylen);
+                /* Do the hash now to avoid needing to copy. */
+                if (s->hostkeylen != 0) {
+                    hash_string(ssh->kex->hash, ssh->exhash, s->hostkeydata,
+                                s->hostkeylen);
+                    s->hkey = ssh->hostkey->newkey(s->hostkeydata,
+                                                   s->hostkeylen);
+                }
+                break;
+              case SSH2_MSG_KEXGSS_CONTINUE:
+                if (s->gss_stat != SSH_GSS_S_CONTINUE_NEEDED) {
+                    bombout(("unexpected gsskex continuation packet"));
+                    crStopV;
+                }
+                ssh_pkt_getstring(pktin, (char**)&s->gss_rcvtok.value,
+                                  (int*)&s->gss_rcvtok.length);
+                s->gss_stat = ssh->gsslib->init_sec_context(
+                        ssh->gsslib,
+                        &s->gss_ctx,
+                        ssh->gss_srv_name,
+                        conf_get_int(ssh->conf, CONF_gssapifwd),
+                        &s->gss_rcvtok,
+                        &s->gss_sndtok);
+                if (s->gss_stat != SSH_GSS_S_COMPLETE &&
+                        s->gss_stat != SSH_GSS_S_CONTINUE_NEEDED)
+                {
+                    bombout(("could not reply to GSSAPI key exchange token"));
+                    crStopV;
+                }
+                s->pktout = ssh2_pkt_init(SSH2_MSG_KEXGSS_CONTINUE);
+                ssh2_pkt_addstring_start(s->pktout);
+                ssh2_pkt_addstring_data(s->pktout, (char*)s->gss_sndtok.value,
+                                        (int)s->gss_sndtok.length);
+                ssh2_pkt_send_noqueue(ssh, s->pktout);
+                ssh->gsslib->free_tok(ssh->gsslib, &s->gss_sndtok);
+              default:
+                bombout(("expected a GSSAPI key exchange packet"));
+                crStopV;
+                break;
+            }
+        } while (pktin->type != SSH2_MSG_KEXGSS_COMPLETE);
+
+        /* Extract the DH parameters, and handle leftover tokens */
+        assert(pktin->type == SSH2_MSG_KEXGSS_COMPLETE);
+        s->f = ssh2_pkt_getmp(pktin);
+        ssh_pkt_getstring(pktin, &s->sigdata, &s->siglen);
+        token_follows = ssh2_pkt_getbool(pktin);
+        if (token_follows) {
+            if (s->gss_stat == SSH_GSS_S_COMPLETE) {
+                bombout(("GSSAPI key exchange protocol error: too many tokens"));
+                crStopV;
+            }
+            ssh_pkt_getstring(pktin, (char**)&s->gss_rcvtok.value,
+			      (int*)&s->gss_rcvtok.length);
+            s->gss_stat = ssh->gsslib->init_sec_context(
+                    ssh->gsslib,
+                    &s->gss_ctx,
+                    ssh->gss_srv_name,
+                    conf_get_int(ssh->conf, CONF_gssapifwd),
+                    &s->gss_rcvtok,
+                    &s->gss_sndtok);
+            if (s->gss_stat != SSH_GSS_OK)
+            {
+                bombout(("should have completed GSSAPI key exchange"));
+                crStopV;
+            }
+        }
+        if (s->gss_stat != SSH_GSS_OK) {
+            bombout(("unknown GSSAPI key exchange failure"));
+            crStopV;
+        }
+
+        /* Finish constructing the hash H */
+        s->K = dh_find_K(ssh->kex_ctx, s->f);
+        /* If we didn't get a HOSTKEY message, add the empty string. */
+        if (s->hostkeylen == 0)
+          hash_string(ssh->kex->hash, ssh->exhash, NULL, 0);
+        if (!ssh->kex->pdata) {
+            hash_uint32(ssh->kex->hash, ssh->exhash, 1024);
+            hash_uint32(ssh->kex->hash, ssh->exhash, s->pbits);
+            hash_uint32(ssh->kex->hash, ssh->exhash, 8192);
+            hash_mpint(ssh->kex->hash, ssh->exhash, s->p);
+            hash_mpint(ssh->kex->hash, ssh->exhash, s->g);
+        }
+        hash_mpint(ssh->kex->hash, ssh->exhash, s->e);
+        hash_mpint(ssh->kex->hash, ssh->exhash, s->f);
+
+        dh_cleanup(ssh->kex_ctx);
+
+        freebn(s->f);
+        if (!ssh->kex->pdata) {
+            freebn(s->g);
+            freebn(s->p);
+        }
+
+        if (s->hkey == NULL) {
+            /* If we got no host key we use the "null" algorithm. */
+            ssh->hostkey = &ssh_null;
+        }
+
+        ssh->did_gssapi = 1;
+#endif
     } else {
 	logeventf(ssh, "Doing RSA key exchange with hash %s",
 		  ssh->kex->hash->text_name);
@@ -6310,6 +6603,25 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     dmemdump(s->exchange_hash, ssh->kex->hash->hlen);
 #endif
 
+#ifndef NO_GSSAPI
+    if (ssh->kex->main_type == KEXTYPE_GSS) {
+	Ssh_gss_buf buf, mic;
+	buf.value = s->exchange_hash;
+	buf.length = ssh->kex->hash->hlen;
+	mic.value = s->sigdata;
+	mic.length = s->siglen;
+	long ret = ssh->gsslib->verify_mic(ssh->gsslib, s->gss_ctx, &buf, &mic);
+	if (ret != SSH_GSS_OK) {
+	    bombout(("GSSAPI key-exchange MIC verification failed"));
+	    crStopV;
+	}
+	/* Done with local context; free if not same as global. */
+	if (s->gss_ctx != ssh->gss_ctx) {
+	    ssh->gsslib->release_cred(ssh->gsslib, s->gss_ctx);
+	    s->gss_ctx = NULL;
+	}
+    } else {
+#endif
     if (!s->hkey ||
 	!ssh->hostkey->verifysig(s->hkey, s->sigdata, s->siglen,
 				 (char *)s->exchange_hash,
@@ -6353,6 +6665,9 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     }
     sfree(s->fingerprint);
     sfree(s->keystr);
+#ifndef NO_GSSAPI
+    }
+#endif
     ssh->hostkey->freekey(s->hkey);
 
     /*
@@ -7838,6 +8153,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		AUTH_TYPE_PUBLICKEY_OFFER_QUIET,
 		AUTH_TYPE_PASSWORD,
 	        AUTH_TYPE_GSSAPI,      /* always QUIET */
+		AUTH_TYPE_GSSAPI_KEYEX,/* always QUIET */
 		AUTH_TYPE_KEYBOARD_INTERACTIVE,
 		AUTH_TYPE_KEYBOARD_INTERACTIVE_QUIET
 	} type;
@@ -7847,6 +8163,8 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 #ifndef NO_GSSAPI
 	int can_gssapi_mic;
 	int tried_gssapi_mic;
+	int can_gssapi_keyex;
+	int tried_gssapi_keyex;
 #endif
 	int kbd_inter_refused;
 	int we_are_in, userauth_success;
@@ -7907,6 +8225,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
     s->we_are_in = s->userauth_success = FALSE;
 #ifndef NO_GSSAPI
     s->tried_gssapi_mic = FALSE;
+    s->tried_gssapi_keyex = FALSE;
 #endif
 
     if (!conf_get_int(ssh->conf, CONF_ssh_no_userauth)) {
@@ -8328,6 +8647,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 #ifndef NO_GSSAPI
 		s->can_gssapi_mic = ssh->can_gssapi &&
 		    in_commasep_string("gssapi-with-mic", methods, methlen);
+		s->can_gssapi_keyex = ssh->can_gssapi &&
+		    ssh->kex->main_type == KEXTYPE_GSS &&
+		    in_commasep_string("gssapi-keyex", methods, methlen);
 #endif
 	    }
 
@@ -8661,6 +8983,50 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		}
 
 #ifndef NO_GSSAPI
+	    } else if (s->can_gssapi_keyex && !s->tried_gssapi_keyex) {
+
+		/* GSSAPI keyex authentication */
+
+		Ssh_gss_buf mic;
+		Ssh_gss_stat result;
+		int micoffset;
+
+		s->type = AUTH_TYPE_GSSAPI_KEYEX;
+		s->tried_gssapi_keyex = TRUE;
+		ssh->pkt_actx = SSH2_PKTCTX_GSSAPI_KEYEX;
+
+		s->pktout = ssh2_pkt_init(0);
+		micoffset = s->pktout->length;
+		ssh_pkt_addstring_start(s->pktout);
+		ssh_pkt_addstring_data(s->pktout, (char *)ssh->v2_session_id,
+				       ssh->v2_session_id_len);
+		ssh_pkt_addbyte(s->pktout, SSH2_MSG_USERAUTH_REQUEST);
+		ssh_pkt_addstring(s->pktout, ssh->username);
+		ssh_pkt_addstring(s->pktout, "ssh-connection");
+		ssh_pkt_addstring(s->pktout, "gssapi-keyex");
+
+		s->gss_buf.value = (char *)s->pktout->data + micoffset;
+		s->gss_buf.length = s->pktout->length - micoffset;
+
+		/* Compute the MIC that binds the channel */
+		result = ssh->gsslib->get_mic(ssh->gsslib, ssh->gss_ctx,
+					      &s->gss_buf, &mic);
+		ssh_free_packet(s->pktout);
+		if (result != SSH_GSS_OK) {
+		    logevent("GSSAPI keyex: failed to build MIC");
+		} else {
+		    s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_REQUEST);
+		    ssh2_pkt_addstring(s->pktout, ssh->username);
+		    ssh2_pkt_addstring(s->pktout, "ssh-connection");
+		    ssh2_pkt_addstring(s->pktout, "gssapi-keyex");
+		    ssh2_pkt_addstring_start(s->pktout);
+		    ssh2_pkt_addstring_data(s->pktout, mic.value, mic.length);
+		    ssh->gsslib->free_mic(ssh->gsslib, &mic);
+		    ssh2_pkt_send(ssh, s->pktout);
+
+		    s->type = AUTH_TYPE_GSSAPI_KEYEX;
+		    continue;
+		}
 	    } else if (s->can_gssapi_mic && !s->tried_gssapi_mic) {
 
 		/* GSSAPI Authentication */
@@ -8713,15 +9079,6 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		    memcmp((char *)s->gss_rcvtok.value + 2,
 			   s->gss_buf.value,s->gss_buf.length) ) {
 		    logevent("GSSAPI authentication - wrong response from server");
-		    continue;
-		}
-
-		/* fetch TGT into GSS engine */
-		s->gss_stat = ssh->gsslib->acquire_cred(ssh->gsslib,
-							&ssh->gss_ctx);
-
-		if (s->gss_stat != SSH_GSS_OK) {
-		    logevent("GSSAPI authentication failed to get credentials");
 		    continue;
 		}
 
@@ -8780,7 +9137,6 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		} while (s-> gss_stat == SSH_GSS_S_CONTINUE_NEEDED);
 
 		if (s->gss_stat != SSH_GSS_OK) {
-		    ssh->gsslib->release_cred(ssh->gsslib, &ssh->gss_ctx);
 		    continue;
 		}
 		logevent("GSSAPI authentication loop finished OK");
@@ -9581,6 +9937,10 @@ static void ssh2_protocol_setup(Ssh ssh)
     /* ssh->packet_dispatch[SSH2_MSG_KEX_DH_GEX_GROUP] = ssh2_msg_transport; duplicate case value */
     ssh->packet_dispatch[SSH2_MSG_KEX_DH_GEX_INIT] = ssh2_msg_transport;
     ssh->packet_dispatch[SSH2_MSG_KEX_DH_GEX_REPLY] = ssh2_msg_transport;
+#ifndef NO_GSSAPI
+    ssh->packet_dispatch[SSH2_MSG_KEXGSS_GROUPREQ] = ssh2_msg_transport;
+    ssh->packet_dispatch[SSH2_MSG_KEXGSS_GROUP] = ssh2_msg_transport;
+#endif
     ssh->packet_dispatch[SSH2_MSG_USERAUTH_REQUEST] = ssh2_msg_unexpected;
     ssh->packet_dispatch[SSH2_MSG_USERAUTH_FAILURE] = ssh2_msg_unexpected;
     ssh->packet_dispatch[SSH2_MSG_USERAUTH_SUCCESS] = ssh2_msg_unexpected;
