@@ -49,6 +49,11 @@ char sshver[] = "PuTTY-Prerelease-" STR(PRERELEASE) ":r" STR(SVN_REV);
 char ver[] = "Custom build r" STR(SVN_REV) ", " __DATE__ " " __TIME__;
 char sshver[] = "PuTTY-Custom-r" STR(SVN_REV);
 
+#elif defined(RELEASE_3P) && defined(VENDOR_3P)
+
+char ver[] = STR(RELEASE_3P);
+char sshver[] = "PuTTY-Custom-" STR(VENDOR_3P);
+
 #else
 
 char ver[] = "Unidentified build, " __DATE__ " " __TIME__;

@@ -75,6 +75,15 @@
 #define BINARY_VERSION BASE_VERSION,SVN_REV,0
 #endif
 
+#elif defined(RELEASE_3P) && defined(VENDOR_3P)
+
+#define VERSION_TEXT "Custom " STR(VENDOR_3P)
+#ifdef MODIFIED
+#define BINARY_VERSION 0,0,0,0
+#else
+#define BINARY_VERSION BASE_VERSION,1,0
+#endif
+
 #else
 
 /* We can't reliably get the same date and time as version.c, so
