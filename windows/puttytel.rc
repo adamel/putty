@@ -7,5 +7,9 @@
 
 #ifndef NO_MANIFESTS
 /* FIXME */
+# ifdef _WIN64
+1 RT_MANIFEST "putty64.mft"
+# else
 1 RT_MANIFEST "putty.mft"
+#endif
 #endif /* NO_MANIFESTS */
