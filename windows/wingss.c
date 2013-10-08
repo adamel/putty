@@ -22,8 +22,9 @@
 
 /* Windows code to set up the GSSAPI library list. */
 
-const int ngsslibs = 3;
-const char *const gsslibnames[3] = {
+#define NUM_GSSLIBS (3)
+const int ngsslibs = NUM_GSSLIBS;
+const char *const gsslibnames[NUM_GSSLIBS] = {
     "MIT Kerberos " MITGSSAPI_DLL_U,
     "Microsoft SSPI SECUR32.DLL",
     "User-specified GSSAPI DLL",
@@ -84,7 +85,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
     struct ssh_gss_liblist *list = snew(struct ssh_gss_liblist);
     char *path;
 
-    list->libraries = snewn(3, struct ssh_gss_library);
+    list->libraries = snewn(NUM_GSSLIBS, struct ssh_gss_library);
     list->nlibraries = 0;
 
     /* MIT Kerberos GSSAPI implementation */
@@ -215,7 +216,7 @@ void ssh_gss_cleanup(struct ssh_gss_liblist *list)
      */
     for (i = 0; i < list->nlibraries; i++) {
 	FreeLibrary((HMODULE)list->libraries[i].handle);
-	if (list->libraries[i].id == 2) {
+	if (list->libraries[i].id == (NUM_GSSLIBS-1)) {
 	    /* The 'custom' id involves a dynamically allocated message.
 	     * Note that we must cast away the 'const' to free it. */
 	    sfree((char *)list->libraries[i].gsslogmsg);
