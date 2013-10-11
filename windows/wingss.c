@@ -11,7 +11,8 @@
 
 #include "misc.h"
 
-/* MIT Kerberos have both 32- and 64-bit DLLs with different names. */
+/* MIT and old Heimdal Kerberos have both 32- and 64-bit DLLs with
+   different names. */
 #ifdef _WIN64
 # define MITGSSAPI_DLL_U	"GSSAPI64.DLL"
 # define MITGSSAPI_DLL_L	"gssapi64.dll"
@@ -19,22 +20,26 @@
 # define MITGSSAPI_DLL_U	"GSSAPI32.DLL"
 # define MITGSSAPI_DLL_L	"gssapi32.dll"
 #endif
+/* New Heimdal Kerberos use the same name for both. */
+#define GSSAPI_DLL		"GSSAPI.DLL"
 
 
 /* Windows code to set up the GSSAPI library list. */
 
-#define NUM_GSSLIBS (3)
+#define NUM_GSSLIBS (4)
 const int ngsslibs = NUM_GSSLIBS;
 const char *const gsslibnames[NUM_GSSLIBS] = {
     "MIT Kerberos " MITGSSAPI_DLL_U,
+    "Heimdal Kerberos " GSSAPI_DLL,
     "Microsoft SSPI SECUR32.DLL",
     "User-specified GSSAPI DLL",
 };
 const struct keyvalwhere gsslibkeywords[] = {
     /* Always gssapi32 so we can use same settings for 32- and 64-bit. */
     { "gssapi32", 0, -1, -1 },
-    { "sspi", 1, -1, -1 },
-    { "custom", 2, -1, -1 },
+    { "heimdal", 1, -1, -1 },
+    { "sspi", 2, -1, -1 },
+    { "custom", 3, -1, -1 },
 };
 
 DECL_WINDOWS_FUNCTION(static, SECURITY_STATUS,
@@ -89,6 +94,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
     HMODULE module;
     HKEY regkey;
     struct ssh_gss_liblist *list = snew(struct ssh_gss_liblist);
+    const char *heimdalmsg = NULL;
     char *path;
     static HMODULE kernel32_module;
     if (!kernel32_module) {
@@ -146,7 +152,55 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	    &list->libraries[list->nlibraries++];
 
 	lib->id = 0;
-	lib->gsslogmsg = "Using GSSAPI from " MITGSSAPI_DLL_U;
+	lib->gsslogmsg = "Using MIT GSSAPI from " MITGSSAPI_DLL_U;
+
+	ssh_ugssapi_bind_fns(lib, module);
+    }
+
+    /* Heimdal Kerberos GSSAPI implementation */
+    module = NULL;
+    if (RegOpenKey(HKEY_LOCAL_MACHINE, "SOFTWARE\\Heimdal\\CurrentVersion",
+		   &regkey)
+	== ERROR_SUCCESS) {
+	DWORD type, size;
+	LONG ret;
+	char *buffer;
+
+	/* Find out the string length */
+        ret = RegQueryValueEx(regkey, "InstallPath", NULL, &type, NULL, &size);
+
+	if (ret == ERROR_SUCCESS && type == REG_SZ) {
+	    buffer = snewn(size + 20, char);
+	    ret = RegQueryValueEx(regkey, "InstallPath", NULL,
+				  &type, buffer, &size);
+	    if (ret == ERROR_SUCCESS && type == REG_SZ) {
+		/* Registry keys may not be nul terminated. */
+		if (buffer[size-1] == '\0') {
+		    size--;
+		}
+		/* First try to load the native library. */
+		sprintf(buffer+size, "\\%s", GSSAPI_DLL);
+		module = LoadLibraryEx(buffer, NULL,
+				       LOAD_WITH_ALTERED_SEARCH_PATH);
+		if (module) {
+		    heimdalmsg = "Using Heimdal GSSAPI from " GSSAPI_DLL;
+		} else {
+		    /* Otherwise try to load the compat library. */
+		    sprintf(buffer+size, "\\%s", MITGSSAPI_DLL_L);
+		    module = LoadLibrary(buffer);
+		    heimdalmsg = "Using Heimdal GSSAPI from " MITGSSAPI_DLL_L;
+		}
+	    }
+	    sfree(buffer);
+	}
+	RegCloseKey(regkey);
+    }
+    if (module) {
+	struct ssh_gss_library *lib =
+	    &list->libraries[list->nlibraries++];
+
+	lib->id = 1;
+	lib->gsslogmsg = heimdalmsg;
 
 	ssh_ugssapi_bind_fns(lib, module);
     }
@@ -157,7 +211,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	struct ssh_gss_library *lib =
 	    &list->libraries[list->nlibraries++];
 
-	lib->id = 1;
+	lib->id = 2;
 	lib->gsslogmsg = "Using SSPI from SECUR32.DLL";
 	lib->handle = (void *)module;
 
@@ -210,7 +264,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	struct ssh_gss_library *lib =
 	    &list->libraries[list->nlibraries++];
 
-	lib->id = 2;
+	lib->id = 3;
 	lib->gsslogmsg = dupprintf("Using GSSAPI from user-specified"
 				   " library '%s'", path);
 	ssh_ugssapi_bind_fns(lib, module);
