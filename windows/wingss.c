@@ -77,6 +77,8 @@ typedef struct winSsh_gss_ctx {
 
 const Ssh_gss_buf gss_mech_krb5={9,"\x2A\x86\x48\x86\xF7\x12\x01\x02\x02"};
 
+static void ssh_ugssapi_bind_fns(struct ssh_gss_library *lib, HMODULE module);
+
 static void ssh_sspi_bind_fns(struct ssh_gss_library *lib);
 
 struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
@@ -121,24 +123,8 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 
 	lib->id = 0;
 	lib->gsslogmsg = "Using GSSAPI from " MITGSSAPI_DLL_U;
-	lib->handle = (void *)module;
 
-#define BIND_GSS_FN(name) \
-    lib->u.gssapi.name = (t_gss_##name) GetProcAddress(module, "gss_" #name)
-
-        BIND_GSS_FN(delete_sec_context);
-        BIND_GSS_FN(display_status);
-        BIND_GSS_FN(get_mic);
-        BIND_GSS_FN(verify_mic);
-        BIND_GSS_FN(import_name);
-        BIND_GSS_FN(init_sec_context);
-        BIND_GSS_FN(release_buffer);
-        BIND_GSS_FN(release_cred);
-        BIND_GSS_FN(release_name);
-
-#undef BIND_GSS_FN
-
-        ssh_gssapi_bind_fns(lib);
+	ssh_ugssapi_bind_fns(lib, module);
     }
 
     /* Microsoft SSPI Implementation */
@@ -178,24 +164,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	lib->id = 2;
 	lib->gsslogmsg = dupprintf("Using GSSAPI from user-specified"
 				   " library '%s'", path);
-	lib->handle = (void *)module;
-
-#define BIND_GSS_FN(name) \
-    lib->u.gssapi.name = (t_gss_##name) GetProcAddress(module, "gss_" #name)
-
-        BIND_GSS_FN(delete_sec_context);
-        BIND_GSS_FN(display_status);
-        BIND_GSS_FN(get_mic);
-        BIND_GSS_FN(verify_mic);
-        BIND_GSS_FN(import_name);
-        BIND_GSS_FN(init_sec_context);
-        BIND_GSS_FN(release_buffer);
-        BIND_GSS_FN(release_cred);
-        BIND_GSS_FN(release_name);
-
-#undef BIND_GSS_FN
-
-        ssh_gssapi_bind_fns(lib);
+	ssh_ugssapi_bind_fns(lib, module);
     }
 
 
@@ -225,6 +194,28 @@ void ssh_gss_cleanup(struct ssh_gss_liblist *list)
     }
     sfree(list->libraries);
     sfree(list);
+}
+
+static void ssh_ugssapi_bind_fns(struct ssh_gss_library *lib, HMODULE module)
+{
+    lib->handle = (void *)module;
+
+#define BIND_GSS_FN(name) \
+    lib->u.gssapi.name = (t_gss_##name) GetProcAddress(module, "gss_" #name)
+
+        BIND_GSS_FN(delete_sec_context);
+        BIND_GSS_FN(display_status);
+        BIND_GSS_FN(get_mic);
+        BIND_GSS_FN(verify_mic);
+        BIND_GSS_FN(import_name);
+        BIND_GSS_FN(init_sec_context);
+        BIND_GSS_FN(release_buffer);
+        BIND_GSS_FN(release_cred);
+        BIND_GSS_FN(release_name);
+
+#undef BIND_GSS_FN
+
+    ssh_gssapi_bind_fns(lib);
 }
 
 static Ssh_gss_stat ssh_sspi_indicate_mech(struct ssh_gss_library *lib,
