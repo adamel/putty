@@ -107,7 +107,8 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 		/* Registry keys may not be nul terminated. */
 		buffer[size] = '\0';
 		strcat(buffer, "\\bin\\" MITGSSAPI_DLL_L);
-		module = LoadLibrary(buffer);
+		module = LoadLibraryEx(buffer, NULL,
+				       LOAD_WITH_ALTERED_SEARCH_PATH);
 	    }
 	    sfree(buffer);
 	}
@@ -167,7 +168,7 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
     module = NULL;
     path = conf_get_filename(conf, CONF_ssh_gss_custom)->path;
     if (*path) {
-	module = LoadLibrary(path);
+	module = LoadLibraryEx(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     }
     if (module) {
 	struct ssh_gss_library *lib =
