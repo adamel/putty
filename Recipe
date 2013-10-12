@@ -68,6 +68,11 @@
 #      full-screen mode (configurable to work on Alt-Enter) will
 #      not behave usefully in a multi-monitor environment.
 #
+#  - COMPAT=/DNO_MULTIMON_H (Windows only)
+#      Compile PuTTY with multi-monitor support, but do not include
+#      <multimon.h>. Some development environments have all the API
+#      definitions but not this particular header.
+#
 #      Note that this definition is always enabled in the Cygwin
 #      build, since at the time of writing this <multimon.h> is
 #      known not to be available in Cygwin.
