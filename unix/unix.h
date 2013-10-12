@@ -145,8 +145,8 @@ void gtk_setup_config_box(struct controlbox *b, int midsession, void *window);
 #define DEFAULT_CODEPAGE 0xFFFF
 #define CP_UTF8 CS_UTF8		       /* from libcharset */
 
-#define strnicmp strncasecmp
-#define stricmp strcasecmp
+#define _strnicmp strncasecmp
+#define _stricmp strcasecmp
 
 /* BSD-semantics version of signal(), and another helpful function */
 void (*putty_signal(int sig, void (*func)(int)))(int);
