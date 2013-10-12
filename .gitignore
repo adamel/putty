@@ -6,7 +6,15 @@ empty.h
 putty-src.zip
 
 charset/sbcsdat.c
-doc/Makefile.vc
+doc/*.1
+doc/*.html
+doc/putty.chm
+doc/putty.cnt
+doc/putty.hhc
+doc/putty.hhk
+doc/putty.hhp
+doc/putty.hlp
+doc/puttydoc.txt
 macosx/Makefile
 unix/.deps
 unix/Makefile
