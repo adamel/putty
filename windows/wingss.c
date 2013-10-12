@@ -104,6 +104,8 @@ struct ssh_gss_liblist *ssh_gss_setup(Conf *conf)
 	    ret = RegQueryValueEx(regkey, "InstallDir", NULL,
 				  &type, (LPBYTE)buffer, &size);
 	    if (ret == ERROR_SUCCESS && type == REG_SZ) {
+		/* Registry keys may not be nul terminated. */
+		buffer[size] = '\0';
 		strcat(buffer, "\\bin\\" MITGSSAPI_DLL_L);
 		module = LoadLibrary(buffer);
 	    }
