@@ -21,7 +21,7 @@
 #include "win_res.h"
 #include "winsecur.h"
 
-#ifndef NO_MULTIMON
+#if !defined(NO_MULTIMON) && !defined(NO_MULTIMON_H)
 #include <multimon.h>
 #endif
 
