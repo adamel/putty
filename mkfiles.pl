@@ -453,7 +453,7 @@ if (defined $makefiles{'cygwin'}) {
     "# You may also need to tell windres where to find include files:\n".
     "# RCINC = --include-dir c:\\cygwin\\include\\\n".
     "\n".
-    &splitline("CFLAGS = -Wall -O2 -D_WINDOWS -DDEBUG".
+    &splitline("CFLAGS = -Wall -Wno-pointer-sign -O2 -D_WINDOWS -DDEBUG".
       " -D_WIN32_WINDOWS=0x500 -DWINVER=0x500".
       " -D_NO_OLDNAMES -DNO_MULTIMON_H -DNO_SECUREZEROMEMORY " .
 	       (join " ", map {"-I$dirpfx$_"} @srcdirs)) .
