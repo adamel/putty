@@ -20,7 +20,7 @@
 #include "storage.h"
 #include "win_res.h"
 
-#ifndef NO_MULTIMON
+#if !defined(NO_MULTIMON) && !defined(NO_MULTIMON_H)
 #include <multimon.h>
 #endif
 
