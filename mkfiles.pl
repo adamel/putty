@@ -455,6 +455,7 @@ if (defined $makefiles{'cygwin'}) {
     "# RCINC = --include-dir c:\\cygwin\\include\\\n".
     "\n".
     &splitline("CFLAGS = -Wall -O2 -D_WINDOWS -DDEBUG".
+      " -D_WIN32_WINDOWS=0x500 -DWINVER=0x500".
       " -D_NO_OLDNAMES -DNO_MULTIMON_H -DNO_HTMLHELP -DNO_SECUREZEROMEMORY " .
 	       (join " ", map {"-I$dirpfx$_"} @srcdirs)) .
 	       "\n".
