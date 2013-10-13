@@ -81,7 +81,11 @@
 #ifdef MODIFIED
 #define BINARY_VERSION 0,0,0,0
 #else
+#ifdef VERSION_3P
+#define BINARY_VERSION BASE_VERSION,VERSION_3P
+#else
 #define BINARY_VERSION BASE_VERSION,1,0
+#endif
 #endif
 
 #else
