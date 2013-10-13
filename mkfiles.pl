@@ -456,7 +456,7 @@ if (defined $makefiles{'cygwin'}) {
     "\n".
     &splitline("CFLAGS = -Wall -O2 -D_WINDOWS -DDEBUG".
       " -D_WIN32_WINDOWS=0x500 -DWINVER=0x500".
-      " -D_NO_OLDNAMES -DNO_MULTIMON_H -DNO_HTMLHELP -DNO_SECUREZEROMEMORY " .
+      " -D_NO_OLDNAMES -DNO_MULTIMON_H -DNO_SECUREZEROMEMORY " .
 	       (join " ", map {"-I$dirpfx$_"} @srcdirs)) .
 	       "\n".
     "LDFLAGS = -s\n".
