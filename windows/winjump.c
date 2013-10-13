@@ -29,7 +29,7 @@
 /*
  * COM structures and functions.
  */
-#if defined(__MINGW64__) && !defined(PROPERTYKEY_DEFINED)
+#if defined(__MINGW64_VERSION_MAJOR) && !defined(PROPERTYKEY_DEFINED)
 /* MinGW64 defines the PROPERTYKEY since at least version 1.0, but
  * didn't define PROPERTYKEY_DEFINED until version 2.0.2. */
 #define PROPERTYKEY_DEFINED
