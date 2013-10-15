@@ -10134,6 +10134,9 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 			/* always quiet, so no c_write */
                         /* also, the code down in the GSSAPI block has
                          * already logged this in the Event Log */
+		    } else if (s->type==AUTH_TYPE_GSSAPI_KEYEX) {
+			/* always quiet, so no c_write */
+			logevent("GSSAPI keyex authentication failed");
 		    } else if (s->type == AUTH_TYPE_KEYBOARD_INTERACTIVE) {
                         logevent("Keyboard-interactive authentication failed");
 			c_write_str(ssh, "Access denied\r\n");
