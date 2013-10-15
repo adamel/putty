@@ -10519,6 +10519,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		s->tried_gssapi_keyex = TRUE;
 		ssh->pkt_actx = SSH2_PKTCTX_GSSAPI_KEYEX;
 
+		/* Compute MIC from dummy USERAUTH_REQUEST packet */
 		s->pktout = ssh2_pkt_init(0);
 		micoffset = s->pktout->length;
 		ssh_pkt_addstring_start(s->pktout);
@@ -10539,10 +10540,12 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		if (result != SSH_GSS_OK) {
 		    logevent("GSSAPI keyex: failed to build MIC");
 		} else {
+		    /* Sending USERAUTH_REQUEST with "gssapi-keyex" method */
 		    s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_REQUEST);
 		    ssh2_pkt_addstring(s->pktout, ssh->username);
 		    ssh2_pkt_addstring(s->pktout, "ssh-connection");
 		    ssh2_pkt_addstring(s->pktout, "gssapi-keyex");
+		    logevent("Attempting GSSAPI keyex authentication");
 		    ssh2_pkt_addstring_start(s->pktout);
 		    ssh2_pkt_addstring_data(s->pktout, mic.value, mic.length);
 		    ssh->gsslib->free_mic(ssh->gsslib, &mic);
