@@ -1,3 +1,18 @@
+PuTTY GSS-API keyex README
+==========================
+
+This is the README file for the PuTTY GSS-API keyex installer
+distribution. It contains the following features not present
+in the upstream PuTTY:
+
+* Support for GSS-API key exchange and gssapi-keyex authentication.
+* Support for Heimdal GSS-API.
+
+The PuTTY GSS-API keyex home is
+
+    https://marcussundberg.com/putty/
+
+
 PuTTY README
 ============
 
