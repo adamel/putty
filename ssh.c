@@ -7353,6 +7353,11 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
     }
     if (!ssh->did_gssapi_kex) {
 	ssh->can_gssapi_kex = FALSE;
+	/* If we didn't do GSSKEX we have no need for global context. */
+	if (ssh->gss_ctx) {
+	    ssh->gsslib->release_cred(ssh->gsslib, &ssh->gss_ctx);
+	    ssh->gss_ctx = NULL;
+	}
     }
 #endif
     ssh->hostkey->freekey(s->hkey);
