@@ -6,7 +6,8 @@
 #ifndef NO_GSSAPI
 
 #define SSH2_GSS_OIDTYPE 0x06
-typedef void *Ssh_gss_ctx;
+struct gssapi_ssh_gss_ctx;
+typedef struct gssapi_ssh_gss_ctx *Ssh_gss_ctx;
 
 typedef enum Ssh_gss_stat {
     SSH_GSS_OK = 0,
