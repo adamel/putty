@@ -955,7 +955,7 @@ struct ssh_tag {
     struct ssh_gss_library *gsslib;
     Ssh_gss_name gss_srv_name;
     Ssh_gss_ctx gss_ctx;
-    int can_gssapi, did_gssapi;
+    int can_gssapi, did_gssapi_kex;
 #endif
 };
 
@@ -6165,7 +6165,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	ssh->gsslibs = ssh_gss_setup(ssh->conf);
     ssh->can_gssapi = conf_get_int(ssh->conf, CONF_try_gssapi_auth) &&
 	ssh->gsslibs->nlibraries > 0;
-    ssh->did_gssapi = FALSE;
+    ssh->did_gssapi_kex = FALSE;
 
     if (ssh->can_gssapi) {
 	/* Select GSSAPI library. */
@@ -6228,7 +6228,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	 * ssh->gss_ctx, since this context must be used by the
 	 * userauth mechanism.
 	 */
-	if (!ssh->did_gssapi) {
+	if (!ssh->did_gssapi_kex) {
 	    ssh->gss_ctx = s->gss_ctx;
 	}
     }
@@ -6370,7 +6370,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
              * workaround we always present our full list of
              * algorithm when rekeying for GSSAPI.
              */
-            || ssh->did_gssapi
+            || ssh->did_gssapi_kex
 #endif
             ) {
             /*
@@ -7068,7 +7068,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
             ssh->hostkey = &ssh_null;
         }
 
-        ssh->did_gssapi = 1;
+        ssh->did_gssapi_kex = 1;
 #endif
     } else {
 	logeventf(ssh, "Doing RSA key exchange with hash %s",
