@@ -10691,6 +10691,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		s->gss_buf.length = s->pktout->length - micoffset;
 
 		ssh->gsslib->get_mic(ssh->gsslib, s->gss_ctx, &s->gss_buf, &mic);
+		ssh_free_packet(s->pktout);
 		s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_GSSAPI_MIC);
 		ssh_pkt_addstring_start(s->pktout);
 		ssh_pkt_addstring_data(s->pktout, mic.value, mic.length);
