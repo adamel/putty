@@ -9690,6 +9690,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 	struct Packet *pktout;
 	Filename *keyfile;
 #ifndef NO_GSSAPI
+	Ssh_gss_ctx gss_ctx;
 	Ssh_gss_buf gss_buf;
 	Ssh_gss_buf gss_rcvtok, gss_sndtok;
 	Ssh_gss_stat gss_stat;
@@ -10607,6 +10608,15 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		    continue;
 		}
 
+		/* fetch TGT into GSS engine */
+		s->gss_stat = ssh->gsslib->acquire_cred(ssh->gsslib,
+							&s->gss_ctx);
+
+		if (s->gss_stat != SSH_GSS_OK) {
+		    logevent("GSSAPI authentication failed to get credentials");
+		    continue;
+		}
+
 		/* initial tokens are empty */
 		SSH_GSS_CLEAR_BUF(&s->gss_rcvtok);
 		SSH_GSS_CLEAR_BUF(&s->gss_sndtok);
@@ -10615,7 +10625,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		do {
 		    s->gss_stat = ssh->gsslib->init_sec_context
 			(ssh->gsslib,
-			 &ssh->gss_ctx,
+			 &s->gss_ctx,
 			 ssh->gss_srv_name,
 			 conf_get_int(ssh->conf, CONF_gssapifwd),
 			 &s->gss_rcvtok,
@@ -10625,8 +10635,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 			s->gss_stat!=SSH_GSS_S_CONTINUE_NEEDED) {
 			logevent("GSSAPI authentication initialisation failed");
 
-			if (ssh->gsslib->display_status(ssh->gsslib,
-							ssh->gss_ctx,
+			if (ssh->gsslib->display_status(ssh->gsslib, s->gss_ctx,
 							&s->gss_buf)
 			    == SSH_GSS_OK) {
 			    logevent(s->gss_buf.value);
@@ -10662,6 +10671,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		} while (s-> gss_stat == SSH_GSS_S_CONTINUE_NEEDED);
 
 		if (s->gss_stat != SSH_GSS_OK) {
+		    ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		    continue;
 		}
 		logevent("GSSAPI authentication loop finished OK");
@@ -10680,8 +10690,7 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		s->gss_buf.value = (char *)s->pktout->data + micoffset;
 		s->gss_buf.length = s->pktout->length - micoffset;
 
-		ssh->gsslib->get_mic(ssh->gsslib, ssh->gss_ctx, &s->gss_buf,
-				     &mic);
+		ssh->gsslib->get_mic(ssh->gsslib, s->gss_ctx, &s->gss_buf, &mic);
 		s->pktout = ssh2_pkt_init(SSH2_MSG_USERAUTH_GSSAPI_MIC);
 		ssh_pkt_addstring_start(s->pktout);
 		ssh_pkt_addstring_data(s->pktout, mic.value, mic.length);
@@ -10689,6 +10698,8 @@ static void do_ssh2_authconn(Ssh ssh, const unsigned char *in, int inlen,
 		ssh->gsslib->free_mic(ssh->gsslib, &mic);
 
 		s->gotit = FALSE;
+
+		ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 		continue;
 #endif
 	    } else if (s->can_keyb_inter && !s->kbd_inter_refused) {
