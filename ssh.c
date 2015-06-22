@@ -7268,7 +7268,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	}
 	/* Done with local context; free if not same as global. */
 	if (s->gss_ctx != ssh->gss_ctx) {
-	    ssh->gsslib->release_cred(ssh->gsslib, s->gss_ctx);
+	    ssh->gsslib->release_cred(ssh->gsslib, &s->gss_ctx);
 	    s->gss_ctx = NULL;
 	}
 	if (!s->got_session_id) {
