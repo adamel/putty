@@ -961,7 +961,7 @@ struct ssh_tag {
     struct ssh_gss_library *gsslib;
     Ssh_gss_name gss_srv_name;
     Ssh_gss_ctx gss_ctx;
-    int can_gssapi, did_gssapi_kex;
+    int can_gssapi, can_gssapi_kex, did_gssapi_kex;
 #endif
 };
 
@@ -6210,6 +6210,8 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 		logevent("GSSAPI import name failed");
 	    /* Disable GSSAPI. */
 	    ssh->can_gssapi = FALSE;
+	} else {
+	    ssh->can_gssapi_kex = 1;
 	}
     } else {
 	/* No point in even bothering to try to load the
@@ -6226,7 +6228,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
      * Don't enable gssapi-keyex unless we can acquire credentials
      * and generate an initial token.
      */
-    if (ssh->can_gssapi) {
+    if (ssh->can_gssapi_kex) {
 	s->gss_ctx = NULL;
 	SSH_GSS_CLEAR_BUF(&s->gss_rcvtok);
 	SSH_GSS_CLEAR_BUF(&s->gss_sndtok);
@@ -6235,10 +6237,10 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	if (ssh->gsslib->acquire_cred(ssh->gsslib, &s->gss_ctx)
 	    != SSH_GSS_OK) {
 	    logevent("GSSAPI authentication failed to get credentials");
-	    ssh->can_gssapi = 0;
+	    ssh->can_gssapi_kex = 0;
 	}
 	/* Check again in case the credential acquisition failed above */
-	if (ssh->can_gssapi) {
+	if (ssh->can_gssapi_kex) {
 	    s->gss_stat = ssh->gsslib->init_sec_context(
 		    ssh->gsslib,
 		    &s->gss_ctx,
@@ -6257,7 +6259,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 		    logevent(gss_buf.value);
 		    sfree(gss_buf.value);
 		}
-		ssh->can_gssapi = 0;
+		ssh->can_gssapi_kex = 0;
 	    }
 	}
 	/* For the first key-exchange we save the context into
@@ -6297,19 +6299,19 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 		break;
 #ifndef NO_GSSAPI
 	      case KEX_GSSGEX:
-		if (ssh->can_gssapi) {
+		if (ssh->can_gssapi_kex) {
 		    s->preferred_kex[s->n_preferred_kex++] =
 			&ssh_gss_diffiehellman_gex;
 		}
 		break;
 	      case KEX_GSSGROUP14:
-		if (ssh->can_gssapi) {
+		if (ssh->can_gssapi_kex) {
 		    s->preferred_kex[s->n_preferred_kex++] =
 			&ssh_gss_diffiehellman_group14;
 		}
 		break;
 	      case KEX_GSSGROUP1:
-		if (ssh->can_gssapi) {
+		if (ssh->can_gssapi_kex) {
 		    s->preferred_kex[s->n_preferred_kex++] =
 			&ssh_gss_diffiehellman_group1;
 		}
@@ -6424,7 +6426,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
              * If we support GSSAPI key exchange we advertise null
              * host keys as well.
              */
-            if (ssh->can_gssapi) {
+            if (ssh->can_gssapi_kex) {
                 ssh2_pkt_addstring_str(s->pktout, ",");
                 ssh2_pkt_addstring_str(s->pktout, ssh_null.name);
             }
@@ -6439,7 +6441,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
              */
             assert(ssh->kex);
 #ifndef NO_GSSAPI
-	    if (!ssh->can_gssapi && strcmp(ssh->hostkey->name, "null") == 0) {
+	    if (!ssh->can_gssapi_kex && strcmp(ssh->hostkey->name, "null") == 0) {
 		bombout(("Using \"null\" host key algorithm, but failed to initialize GSSAPI during rekey"));
 		crStopV;
 	    }
@@ -6588,7 +6590,7 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
 	}
 #ifndef NO_GSSAPI
 	/* If using GSSAPI key exchange null host keys are ok. */
-	if (!ssh->hostkey && ssh->can_gssapi) {
+	if (!ssh->hostkey && ssh->can_gssapi_kex) {
 	    if (ssh->kex->main_type == KEXTYPE_GSS) {
 		/*
 		 * RFC 4462, section 5:
@@ -7349,6 +7351,9 @@ static void do_ssh2_transport(Ssh ssh, void *vin, int inlen,
         sfree(s->keystr);
     }
 #ifndef NO_GSSAPI
+    }
+    if (!ssh->did_gssapi_kex) {
+	ssh->can_gssapi_kex = FALSE;
     }
 #endif
     ssh->hostkey->freekey(s->hkey);
@@ -9598,7 +9603,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 #ifndef NO_GSSAPI
 		s->can_gssapi_mic = ssh->can_gssapi &&
 		    in_commasep_string("gssapi-with-mic", methods, methlen);
-		s->can_gssapi_keyex = ssh->can_gssapi &&
+		s->can_gssapi_keyex = ssh->can_gssapi_kex &&
 		    ssh->kex->main_type == KEXTYPE_GSS &&
 		    in_commasep_string("gssapi-keyex", methods, methlen);
 #endif
