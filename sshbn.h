@@ -26,7 +26,12 @@
  * using the same 'two machine registers' kind of code generation that
  * 32-bit targets use for 64-bit ints. If we have one of these, we can
  * use a 64-bit BignumInt and a 128-bit BignumDblInt. */
+#if defined(__MINGW64_VERSION_MAJOR)
+#include <stdint.h>
+typedef uint64_t BignumInt;
+#else
 typedef __uint64_t BignumInt;
+#endif
 typedef __uint128_t BignumDblInt;
 #define BIGNUM_INT_MASK  0xFFFFFFFFFFFFFFFFULL
 #define BIGNUM_TOP_BIT   0x8000000000000000ULL
