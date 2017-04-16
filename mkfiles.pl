@@ -591,7 +591,7 @@ if (defined $makefiles{'cygwin'}) {
       " -D_NO_OLDNAMES -DNO_MULTIMON_H " .
 	       (join " ", map {"-I$dirpfx$_"} @srcdirs)) .
 	       "\n".
-    "LDFLAGS = -s -Wl,--nxcompat\n".
+    "LDFLAGS = -s -Wl,--nxcompat,--dynamicbase\n".
     &splitline("RCFLAGS = \$(RCINC) --define WIN32=1 --define _WIN32=1 ".
       "--define WINVER=0x0400 ".(join " ", map {"-I$dirpfx$_"} @srcdirs))."\n".
     "\n".
