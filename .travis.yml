@@ -1,0 +1,4 @@
+language: c
+install:
+ - sudo apt-get install halibut libgtk-3-dev
+script: ./mkfiles.pl && ./mkauto.sh && ./configure && make -C doc man && make
